@@ -5,7 +5,6 @@ import mercadopago
 import uuid
 import datetime
 from supabase import create_client, Client
-from dotenv import load_dotenv
 
 # Carrega variáveis de ambiente
 load_dotenv()   
