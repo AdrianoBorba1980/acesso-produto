@@ -20,28 +20,25 @@ sdk = mercadopago.SDK(os.environ.get('MP_ACCESS_TOKEN'))
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        body = request.get_data()
-        signature_header = request.headers.get('x-signature')
-        
-        # Verifica signature (segurança opcional mas recomendada)
-        if signature_header:
-            sdk.payment().get_received_events(body, signature_header)
-        
         # Processa notificação
         data = request.json
+        
+        # Log para debug (opcional)
+        print(f"Recebido: {data}")
+
         if data and data.get('type') == 'payment':
             payment_id = data['data']['id']
             
             # Busca detalhes do pagamento na API do MP
-            payment = sdk.payment().find_by_id(payment_id)
+            payment = sdk.payment().get(payment_id) # Atenção: mudei de .find_by_id para .get (padrão novo)
+            payment_response = payment["response"] # O SDK retorna um dicionário com "response"
             
             # Se o pagamento foi aprovado
-            if payment.response['status'] == 'approved':
-                payer_email = payment.response['payer']['email']
-                transaction_amount = float(payment.response.get('transaction_amount', 0))
+            if payment_response['status'] == 'approved':
+                payer_email = payment_response['payer']['email']
+                transaction_amount = float(payment_response.get('transaction_amount', 0))
                 
                 # --- LÓGICA DE PREÇO AQUI ---
-                # Se pagou mais de 100 reais (139,90), é Vitalício. Senão (19,90), é Demo.
                 if transaction_amount > 100.00:
                     tipo_produto = 'vitalicio'
                     print(f"💰 Venda VITALÍCIA detectada: R$ {transaction_amount}")
@@ -60,7 +57,7 @@ def webhook():
                     'token': token,
                     'expires': expires.isoformat(),
                     'used': False,
-                    'product_type': tipo_produto # Salva o tipo correto baseado no preço
+                    'product_type': tipo_produto
                 }
                 supabase.table('acessos').insert(data_access).execute()
                 
