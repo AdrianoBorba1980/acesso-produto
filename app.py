@@ -9,100 +9,83 @@ import datetime
 from supabase import create_client, Client
 
 app = Flask(__name__)
-CORS(app)  # Permite webhooks do Mercado Pago
+CORS(app)
 
 # --- CONFIGURAÇÕES ---
-# Supabase
 supabase_url = os.environ.get('SUPABASE_URL')
 supabase_key = os.environ.get('SUPABASE_ANON_KEY')
 supabase: Client = create_client(supabase_url, supabase_key)
-
-# Mercado Pago
 sdk = mercadopago.SDK(os.environ.get('MP_ACCESS_TOKEN'))
 
-# E-mail (Gmail)
+# Configurações de Email
 EMAIL_ADDRESS = os.environ.get('EMAIL_REMETENTE')
 EMAIL_PASSWORD = os.environ.get('EMAIL_SENHA')
 
-# --- FUNÇÃO AUXILIAR: ENVIAR EMAIL ---
+# --- FUNÇÃO DE ENVIO DE E-MAIL ---
 def enviar_email_acesso(destinatario, tipo_produto, link_acesso):
     msg = EmailMessage()
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = destinatario
     
-    # CORREÇÃO APLICADA: Usando a variável {link_acesso} corretamente
     if tipo_produto == 'vitalicio':
         msg['Subject'] = "🏆 Seu Acesso Vitalício Chegou! - Scalper 72x9"
         corpo = f"""
         Olá! Parabéns pela decisão.
-        
         Aqui está seu acesso VIP e Vitalício ao Robô Scalper 72x9.
         
         🔗 CLIQUE PARA BAIXAR:
         {link_acesso}
         
-        Importante: Este link é exclusivo, pessoal e expira em 24h.
+        Importante: Este link é exclusivo e pessoal.
         """
     else:
         msg['Subject'] = "⏳ Seu Acesso Demo Chegou! - Scalper 72x9"
         corpo = f"""
         Olá! Obrigado por testar nosso robô.
-        
         Aqui está seu acesso de demonstração (30 dias).
         
         🔗 CLIQUE PARA BAIXAR:
         {link_acesso}
         
-        Importante: Este link é exclusivo, pessoal e expira em 24h.
+        Importante: Este link é exclusivo e pessoal.
         """
 
     msg.set_content(corpo)
-
     try:
-        # Configuração para Gmail (smtp.gmail.com, porta 465)
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
             smtp.send_message(msg)
-            print(f"📧 Email enviado com sucesso para {destinatario}")
+            print(f"📧 Email enviado para {destinatario}")
     except Exception as e:
-        print(f"❌ Erro ao enviar email: {e}")
+        print(f"❌ Erro email: {e}")
 
 # --- WEBHOOK (RECEBE O PAGAMENTO) ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.json
-        
-        # Filtra apenas notificações de pagamento
         if data and data.get('type') == 'payment':
             payment_id = data['data']['id']
-            
-            # Busca detalhes no Mercado Pago
             payment_info = sdk.payment().get(payment_id)
             payment = payment_info.get("response", {})
             
             if payment.get('status') == 'approved':
                 email_cliente = payment['payer']['email']
-                # LÊ O CÓDIGO DE REFERÊNCIA (REF_VITALICIO ou REF_DEMO)
                 ref_code = payment.get('external_reference')
                 
-                print(f"🔎 Processando Ref: {ref_code} | Email: {email_cliente}")
+                print(f"🔎 Pagamento Aprovado! Ref: {ref_code} | Email: {email_cliente}")
                 
-                # --- DECISÃO PELO CÓDIGO ---
                 if ref_code == 'REF_VITALICIO':
                     product_type = 'vitalicio'
                 elif ref_code == 'REF_DEMO':
                     product_type = 'demo'
                 else:
-                    # Segurança: Se não tiver código, entrega o Demo
                     product_type = 'demo'
-                    print(f"⚠️ Referência desconhecida ({ref_code}). Entregando DEMO.")
-
-                # Gera Token
+                
                 token = str(uuid.uuid4())
                 expires = datetime.datetime.now() + datetime.timedelta(hours=24)
                 
-                # Salva no Supabase
+                # Salva no Banco (Tabela Corrigida)
                 supabase.table('tabela-vendas-robo').insert({
                     'payment_id': str(payment_id),
                     'email': email_cliente,
@@ -112,121 +95,89 @@ def webhook():
                     'product_type': product_type
                 }).execute()
                 
-                # --- ENVIA O E-MAIL COM O LINK ---
-                # O link leva para a sua API, que vai mostrar a tela de download
                 link_final = f"https://acesso-produto.onrender.com/acesso?token={token}"
                 enviar_email_acesso(email_cliente, product_type, link_final)
-                
-                print(f"✅ Token criado e email disparado para {email_cliente}")
-        
+
         return '', 200
     except Exception as e:
         print(f"❌ Erro webhook: {e}")
         return '', 200
 
+# --- NOVO: GERADOR DE LINKS OFICIAIS ---
+@app.route('/admin')
+def admin_links():
+    # Cria preferência do DEMO (R$ 1,00 para teste)
+    pref_demo = sdk.preference().create({
+        "items": [{"title": "Robô Scalper Demo (Teste)", "quantity": 1, "unit_price": 1.00}],
+        "external_reference": "REF_DEMO",
+        "back_urls": {"success": "https://acesso-produto.onrender.com/obrigado"}
+    })
+    link_demo = pref_demo["response"]["init_point"]
+
+    # Cria preferência do VITALÍCIO (Ex: R$ 10,00 - Edite o valor aqui)
+    pref_vital = sdk.preference().create({
+        "items": [{"title": "Robô Scalper VITALÍCIO", "quantity": 1, "unit_price": 10.00}],
+        "external_reference": "REF_VITALICIO",
+        "back_urls": {"success": "https://acesso-produto.onrender.com/obrigado"}
+    })
+    link_vital = pref_vital["response"]["init_point"]
+
+    return render_template_string(f"""
+    <html>
+    <head><style>body{{font-family:sans-serif;padding:40px;text-align:center;}} .box{{border:1px solid #ccc;padding:20px;margin:20px;border-radius:10px;}} a{{background:#009ee3;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;}}</style></head>
+    <body>
+        <h1>🏭 Fábrica de Links Oficiais</h1>
+        <p>Use estes links para vender. Eles estão conectados ao seu Robô!</p>
+        
+        <div class="box">
+            <h3>🧪 Link DEMO (Teste R$ 1,00)</h3>
+            <p>Este link entrega o arquivo DEMO.</p>
+            <br>
+            <a href="{link_demo}" target="_blank">🔗 Abrir Link de Pagamento</a>
+        </div>
+
+        <div class="box">
+            <h3>🏆 Link VITALÍCIO (R$ 10,00)</h3>
+            <p>Este link entrega o arquivo VITALÍCIO.</p>
+            <br>
+            <a href="{link_vital}" target="_blank">🔗 Abrir Link de Pagamento</a>
+        </div>
+    </body>
+    </html>
+    """)
+
 # --- PÁGINA DE OBRIGADO ---
 @app.route('/obrigado')
 def obrigado():
-    payment_id = request.args.get('payment_id', 'N/A')
-    return render_template_string(f"""
-<!DOCTYPE html>
-<html>
-<head><title>Verifique seu E-mail</title>
-<style>
-body {{ font-family: Arial; max-width: 600px; margin: 50px auto; text-align: center; }}
-.aviso {{ background: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-.btn {{ background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-size: 18px; }}
-</style>
-</head>
-<body>
-<h1>✅ Pagamento Confirmado!</h1>
-<p>ID do pedido: <strong>{payment_id}</strong></p>
+    return "<h1>✅ Pagamento Recebido! Verifique seu e-mail.</h1>"
 
-<div class="aviso">
-    <h3>🚀 Seu acesso foi enviado!</h3>
-    <p>Verifique agora sua <strong>Caixa de Entrada</strong> ou <strong>Spam</strong>.</p>
-    <p>O e-mail contém seu link exclusivo de download.</p>
-</div>
-
-<p>Dúvidas?</p>
-<a href="https://wa.me/5524981161636" class="btn">📱 Suporte WhatsApp</a>
-</body>
-</html>
-    """)
-
-# --- ROTA DE DOWNLOAD (VALIDA O TOKEN E MOSTRA TELA) ---
+# --- ROTA DE DOWNLOAD ---
 @app.route('/acesso')
 def acesso():
     token = request.args.get('token')
-    if not token: return "❌ Token inválido", 403
+    if not token: return "Token inválido", 403
     
     now = datetime.datetime.now().isoformat()
+    res = supabase.table('tabela-vendas-robo').select('*').eq('token', token).eq('used', False).gte('expires', now).execute()
     
-    # Valida no Supabase
-    response = (supabase.table('tabela-vendas-robo')
-                .select('*')
-                .eq('token', token)
-                .eq('used', False)
-                .gte('expires', now)
-                .execute())
-    
-    if response.data:
-        registro = response.data[0]
-        # Queima o token (marca como usado)
+    if res.data:
+        registro = res.data[0]
         supabase.table('tabela-vendas-robo').update({'used': True}).eq('token', token).execute()
         
-        tipo_produto = registro.get('product_type', 'demo')
-        
-        # --- LINKS FINAIS DO DRIVE (AJUSTE AQUI SEUS LINKS) ---
-        if tipo_produto == 'vitalicio':
-            produto_link = "https://drive.google.com/file/d/1gE2ZtwTa-0pVojgHVv0IFFkR0WMpRTmW/view?usp=sharing"
-            product_name = "Scalper 72x9 - Acesso VITALÍCIO 🏆"
-            cor_titulo = "#d4af37" # Dourado
+        if registro.get('product_type') == 'vitalicio':
+            link = "https://drive.google.com/file/d/1gE2ZtwTa-0pVojgHVv0IFFkR0WMpRTmW/view?usp=sharing" # SEU LINK VITALICIO
+            nome = "VITALÍCIO"
         else:
-            produto_link = "https://drive.google.com/file/d/1HfyvtqEZkPBji1G6jg3VUT97Y8H9tlO0/view?usp=sharing"
-            product_name = "Scalper 72x9 - Acesso DEMO (30 dias) ⏳"
-            cor_titulo = "#28a745" # Verde
-        
-        # Exibe a tela bonita de download (RESTAURADA)
+            link = "https://drive.google.com/file/d/1HfyvtqEZkPBji1G6jg3VUT97Y8H9tlO0/view?usp=sharing" # SEU LINK DEMO
+            nome = "DEMO (30 Dias)"
+            
         return render_template_string(f"""
-<!DOCTYPE html>
-<html>
-<head><title>Acesso Liberado</title>
-<style>
-body {{ font-family: Arial; max-width: 600px; margin: 50px auto; text-align: center; background: #f8f9fa; }}
-.container {{ background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }}
-.btn {{ background: #007bff; color: white; padding: 20px 40px; text-decoration: none; border-radius: 8px; font-size: 20px; display: inline-block; margin: 20px 0; }}
-h1 {{ color: {cor_titulo}; }}
-.product-name {{ color: #333; font-size: 18px; margin: 10px 0; }}
-</style>
-</head>
-<body>
-<div class="container">
-<h1>🎉 Acesso Liberado!</h1>
-<p class="product-name"><strong>{product_name}</strong></p>
-<p>Seu produto está pronto para download.</p>
-<p><strong>Este link é único e pessoal.</strong></p>
-<a href="{produto_link}" class="btn" target="_blank">⬇️ Baixar Produto Agora</a>
-<p style="font-size: 14px; color: #666;">Link expira em 24h ou após 1 uso.</p>
-</div>
-</body>
-</html>
+        <h1>🎉 Acesso Liberado: {nome}</h1>
+        <a href="{link}">⬇️ Baixar Agora</a>
         """)
     else:
-        return render_template_string("""
-<!DOCTYPE html>
-<html><body style="font-family:Arial;text-align:center;padding:50px;">
-<h2>❌ Link Expirado ou Já Utilizado</h2>
-<p>Por segurança, nossos links são de uso único.</p>
-<p>Se você teve problemas com o download, contate o suporte.</p>
-<a href="https://wa.me/5524981161636">Chamar no WhatsApp</a>
-</body></html>
-        """), 403
-
-@app.route('/')
-def home():
-    return "🚀 API de Proteção Scalper 72x9 Online"
+        return "<h1>Link expirado ou já usado.</h1>", 403
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port)
