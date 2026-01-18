@@ -74,7 +74,7 @@ body {{ font-family: Arial; max-width: 600px; margin: 50px auto; text-align: cen
 <p>ID: <strong>{payment_id}</strong></p>
 <p>Seu link de acesso único foi enviado para seu e-mail.</p>
 <p>Verifique a caixa de entrada ou spam. Expira em 24h.</p>
-<a href="https://wa.me/5511999999999" class="btn">📱 Suporte WhatsApp</a>
+<a href="https://wa.me/5524981161636" class="btn">📱 Suporte WhatsApp</a>
 </body>
 </html>
     """)
