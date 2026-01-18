@@ -129,14 +129,14 @@ def webhook():
 @app.route('/admin')
 def admin_links():
     pref_demo = sdk.preference().create({
-        "items": [{"title": "Robô Scalper Demo (Teste)", "quantity": 1, "unit_price": 1.00}],
+        "items": [{"title": "Robô SCALPER72X9DEMO", "quantity": 1, "unit_price": 19.90}],
         "external_reference": "REF_DEMO",
         "back_urls": {"success": "https://acesso-produto.onrender.com/obrigado"}
     })
     link_demo = pref_demo["response"]["init_point"]
 
     pref_vital = sdk.preference().create({
-        "items": [{"title": "Robô Scalper VITALÍCIO", "quantity": 1, "unit_price": 10.00}],
+        "items": [{"title": "Robô SCALPER72X9VITALICIO", "quantity": 1, "unit_price": 139.90}],
         "external_reference": "REF_VITALICIO",
         "back_urls": {"success": "https://acesso-produto.onrender.com/obrigado"}
     })
@@ -147,8 +147,8 @@ def admin_links():
     <head><style>body{{font-family:sans-serif;padding:40px;text-align:center;}} .box{{border:1px solid #ccc;padding:20px;margin:20px;border-radius:10px;}} a{{background:#009ee3;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;}}</style></head>
     <body>
         <h1>🏭 Fábrica de Links</h1>
-        <div class="box"><h3>🧪 Demo (R$ 1,00)</h3><a href="{link_demo}" target="_blank">🔗 Link Pagamento</a></div>
-        <div class="box"><h3>🏆 Vitalício (R$ 10,00)</h3><a href="{link_vital}" target="_blank">🔗 Link Pagamento</a></div>
+        <div class="box"><h3>🧪 SCALPER72X9DEMO (R$ 19,90)</h3><a href="{link_demo}" target="_blank">🔗 Link Pagamento</a></div>
+        <div class="box"><h3>🏆 SCALPER72X9VITALICIO (R$ 139,90)</h3><a href="{link_vital}" target="_blank">🔗 Link Pagamento</a></div>
     </body>
     </html>
     """)
@@ -173,10 +173,10 @@ def acesso():
         
         if registro.get('product_type') == 'vitalicio':
             link = "https://drive.google.com/file/d/1gE2ZtwTa-0pVojgHVv0IFFkR0WMpRTmW/view?usp=sharing"
-            nome = "VITALÍCIO"
+            nome = "SCALPER72X9VITALICIO"
         else:
             link = "https://drive.google.com/file/d/1HfyvtqEZkPBji1G6jg3VUT97Y8H9tlO0/view?usp=sharing"
-            nome = "DEMO (30 Dias)"
+            nome = "SCALPER72X9DEMO"
             
         return render_template_string(f"""
         <h1>🎉 Acesso Liberado: {nome}</h1>
