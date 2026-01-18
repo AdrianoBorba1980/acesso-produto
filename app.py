@@ -103,7 +103,7 @@ def webhook():
                 expires = datetime.datetime.now() + datetime.timedelta(hours=24)
                 
                 # Salva no Supabase
-                supabase.table('acessos').insert({
+                supabase.table('tabela-vendas-robo').insert({
                     'payment_id': str(payment_id),
                     'email': email_cliente,
                     'token': token,
@@ -163,7 +163,7 @@ def acesso():
     now = datetime.datetime.now().isoformat()
     
     # Valida no Supabase
-    response = (supabase.table('acessos')
+    response = (supabase.table('tabela-vendas-robo')
                 .select('*')
                 .eq('token', token)
                 .eq('used', False)
@@ -173,7 +173,7 @@ def acesso():
     if response.data:
         registro = response.data[0]
         # Queima o token (marca como usado)
-        supabase.table('acessos').update({'used': True}).eq('token', token).execute()
+        supabase.table('tabela-vendas-robo').update({'used': True}).eq('token', token).execute()
         
         tipo_produto = registro.get('product_type', 'demo')
         
