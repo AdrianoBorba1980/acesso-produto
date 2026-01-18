@@ -30,6 +30,7 @@ def enviar_email_acesso(destinatario, tipo_produto, link_acesso):
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = destinatario
     
+    # CORREÇÃO APLICADA: Usando a variável {link_acesso} corretamente
     if tipo_produto == 'vitalicio':
         msg['Subject'] = "🏆 Seu Acesso Vitalício Chegou! - Scalper 72x9"
         corpo = f"""
@@ -38,7 +39,7 @@ def enviar_email_acesso(destinatario, tipo_produto, link_acesso):
         Aqui está seu acesso VIP e Vitalício ao Robô Scalper 72x9.
         
         🔗 CLIQUE PARA BAIXAR:
-        https://mpago.la/2nQxvKe
+        {link_acesso}
         
         Importante: Este link é exclusivo, pessoal e expira em 24h.
         """
@@ -50,7 +51,7 @@ def enviar_email_acesso(destinatario, tipo_produto, link_acesso):
         Aqui está seu acesso de demonstração (30 dias).
         
         🔗 CLIQUE PARA BAIXAR:
-        https://mpago.la/1Yj1YWo
+        {link_acesso}
         
         Importante: Este link é exclusivo, pessoal e expira em 24h.
         """
@@ -112,7 +113,7 @@ def webhook():
                 }).execute()
                 
                 # --- ENVIA O E-MAIL COM O LINK ---
-                # Ajuste aqui se sua URL no Render for diferente
+                # O link leva para a sua API, que vai mostrar a tela de download
                 link_final = f"https://acesso-produto.onrender.com/acesso?token={token}"
                 enviar_email_acesso(email_cliente, product_type, link_final)
                 
@@ -153,7 +154,7 @@ body {{ font-family: Arial; max-width: 600px; margin: 50px auto; text-align: cen
 </html>
     """)
 
-# --- ROTA DE DOWNLOAD (VALIDA O TOKEN) ---
+# --- ROTA DE DOWNLOAD (VALIDA O TOKEN E MOSTRA TELA) ---
 @app.route('/acesso')
 def acesso():
     token = request.args.get('token')
@@ -176,7 +177,7 @@ def acesso():
         
         tipo_produto = registro.get('product_type', 'demo')
         
-        # --- LINKS FINAIS DO DRIVE ---
+        # --- LINKS FINAIS DO DRIVE (AJUSTE AQUI SEUS LINKS) ---
         if tipo_produto == 'vitalicio':
             produto_link = "https://drive.google.com/file/d/1gE2ZtwTa-0pVojgHVv0IFFkR0WMpRTmW/view?usp=sharing"
             product_name = "Scalper 72x9 - Acesso VITALÍCIO 🏆"
@@ -186,7 +187,7 @@ def acesso():
             product_name = "Scalper 72x9 - Acesso DEMO (30 dias) ⏳"
             cor_titulo = "#28a745" # Verde
         
-        # Exibe a tela bonita de download
+        # Exibe a tela bonita de download (RESTAURADA)
         return render_template_string(f"""
 <!DOCTYPE html>
 <html>
