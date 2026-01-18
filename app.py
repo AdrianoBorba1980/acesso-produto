@@ -1,7 +1,8 @@
 import os
 import smtplib
+import threading  # <--- IMPORTANTE: Biblioteca para segundo plano
 from email.message import EmailMessage
-from flask import Flask, request, redirect, render_template_string
+from flask import Flask, request, render_template_string
 from flask_cors import CORS
 import mercadopago
 import uuid
@@ -21,8 +22,11 @@ sdk = mercadopago.SDK(os.environ.get('MP_ACCESS_TOKEN'))
 EMAIL_ADDRESS = os.environ.get('EMAIL_REMETENTE')
 EMAIL_PASSWORD = os.environ.get('EMAIL_SENHA')
 
-# --- FUNÇÃO DE ENVIO DE E-MAIL ---
-def enviar_email_acesso(destinatario, tipo_produto, link_acesso):
+# --- FUNÇÃO DE ENVIO (AGORA RODA EM SEGUNDO PLANO) ---
+def enviar_email_tarefa(destinatario, tipo_produto, link_acesso):
+    """Esta função roda separada para não travar o servidor"""
+    print(f"📧 Iniciando envio para {destinatario} em background...")
+    
     msg = EmailMessage()
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = destinatario
@@ -51,21 +55,38 @@ def enviar_email_acesso(destinatario, tipo_produto, link_acesso):
         """
 
     msg.set_content(corpo)
+
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        # TENTATIVA 1: Porta 587 (TLS) - Geralmente melhor para Cloud
+        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+            smtp.starttls()
             smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
             smtp.send_message(msg)
-            print(f"📧 Email enviado para {destinatario}")
+            print(f"✅ Email enviado com sucesso para {destinatario}")
     except Exception as e:
-        print(f"❌ Erro email: {e}")
+        print(f"❌ Erro ao enviar email (Porta 587): {e}")
+        # TENTATIVA 2: Porta 465 (SSL) - Backup
+        try:
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+                smtp.send_message(msg)
+                print(f"✅ Email enviado com sucesso (Backup SSL) para {destinatario}")
+        except Exception as e2:
+            print(f"❌ Erro fatal no envio de email: {e2}")
 
-# --- WEBHOOK (RECEBE O PAGAMENTO) ---
+def disparar_email_async(destinatario, tipo_produto, link_acesso):
+    # Cria a thread que vai rodar a função acima sem travar o código
+    thread = threading.Thread(target=enviar_email_tarefa, args=(destinatario, tipo_produto, link_acesso))
+    thread.start()
+
+# --- WEBHOOK ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.json
         if data and data.get('type') == 'payment':
             payment_id = data['data']['id']
+            # Busca pagamento no MP
             payment_info = sdk.payment().get(payment_id)
             payment = payment_info.get("response", {})
             
@@ -73,19 +94,17 @@ def webhook():
                 email_cliente = payment['payer']['email']
                 ref_code = payment.get('external_reference')
                 
-                print(f"🔎 Pagamento Aprovado! Ref: {ref_code} | Email: {email_cliente}")
+                print(f"🔎 Pagamento Aprovado: {payment_id} | Email: {email_cliente}")
                 
                 if ref_code == 'REF_VITALICIO':
                     product_type = 'vitalicio'
-                elif ref_code == 'REF_DEMO':
-                    product_type = 'demo'
                 else:
                     product_type = 'demo'
                 
                 token = str(uuid.uuid4())
                 expires = datetime.datetime.now() + datetime.timedelta(hours=24)
                 
-                # Salva no Banco (Tabela Corrigida)
+                # 1. Salva no Banco (Rápido)
                 supabase.table('tabela-vendas-robo').insert({
                     'payment_id': str(payment_id),
                     'email': email_cliente,
@@ -94,19 +113,21 @@ def webhook():
                     'used': False,
                     'product_type': product_type
                 }).execute()
+                print("💾 Dados salvos no Supabase.")
                 
+                # 2. Dispara e-mail em SEGUNDO PLANO (Não espera resposta)
                 link_final = f"https://acesso-produto.onrender.com/acesso?token={token}"
-                enviar_email_acesso(email_cliente, product_type, link_final)
+                disparar_email_async(email_cliente, product_type, link_final)
 
+        # Responde OK imediatamente para o Mercado Pago não dar Timeout
         return '', 200
     except Exception as e:
         print(f"❌ Erro webhook: {e}")
         return '', 200
 
-# --- NOVO: GERADOR DE LINKS OFICIAIS ---
+# --- GERADOR DE LINKS ---
 @app.route('/admin')
 def admin_links():
-    # Cria preferência do DEMO (R$ 1,00 para teste)
     pref_demo = sdk.preference().create({
         "items": [{"title": "Robô Scalper Demo (Teste)", "quantity": 1, "unit_price": 1.00}],
         "external_reference": "REF_DEMO",
@@ -114,7 +135,6 @@ def admin_links():
     })
     link_demo = pref_demo["response"]["init_point"]
 
-    # Cria preferência do VITALÍCIO (Ex: R$ 10,00 - Edite o valor aqui)
     pref_vital = sdk.preference().create({
         "items": [{"title": "Robô Scalper VITALÍCIO", "quantity": 1, "unit_price": 10.00}],
         "external_reference": "REF_VITALICIO",
@@ -126,30 +146,17 @@ def admin_links():
     <html>
     <head><style>body{{font-family:sans-serif;padding:40px;text-align:center;}} .box{{border:1px solid #ccc;padding:20px;margin:20px;border-radius:10px;}} a{{background:#009ee3;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;}}</style></head>
     <body>
-        <h1>🏭 Fábrica de Links Oficiais</h1>
-        <p>Use estes links para vender. Eles estão conectados ao seu Robô!</p>
-        
-        <div class="box">
-            <h3>🧪 Link DEMO (Teste R$ 1,00)</h3>
-            <p>Este link entrega o arquivo DEMO.</p>
-            <br>
-            <a href="{link_demo}" target="_blank">🔗 Abrir Link de Pagamento</a>
-        </div>
-
-        <div class="box">
-            <h3>🏆 Link VITALÍCIO (R$ 10,00)</h3>
-            <p>Este link entrega o arquivo VITALÍCIO.</p>
-            <br>
-            <a href="{link_vital}" target="_blank">🔗 Abrir Link de Pagamento</a>
-        </div>
+        <h1>🏭 Fábrica de Links</h1>
+        <div class="box"><h3>🧪 Demo (R$ 1,00)</h3><a href="{link_demo}" target="_blank">🔗 Link Pagamento</a></div>
+        <div class="box"><h3>🏆 Vitalício (R$ 10,00)</h3><a href="{link_vital}" target="_blank">🔗 Link Pagamento</a></div>
     </body>
     </html>
     """)
 
-# --- PÁGINA DE OBRIGADO ---
+# --- ROTA OBRIGADO (Monitoramento) ---
 @app.route('/obrigado')
 def obrigado():
-    return "<h1>✅ Pagamento Recebido! Verifique seu e-mail.</h1>"
+    return "<h1>✅ Sistema Online e Monitorado.</h1>"
 
 # --- ROTA DE DOWNLOAD ---
 @app.route('/acesso')
@@ -165,10 +172,10 @@ def acesso():
         supabase.table('tabela-vendas-robo').update({'used': True}).eq('token', token).execute()
         
         if registro.get('product_type') == 'vitalicio':
-            link = "https://drive.google.com/file/d/1gE2ZtwTa-0pVojgHVv0IFFkR0WMpRTmW/view?usp=sharing" # SEU LINK VITALICIO
+            link = "https://drive.google.com/file/d/1gE2ZtwTa-0pVojgHVv0IFFkR0WMpRTmW/view?usp=sharing"
             nome = "VITALÍCIO"
         else:
-            link = "https://drive.google.com/file/d/1HfyvtqEZkPBji1G6jg3VUT97Y8H9tlO0/view?usp=sharing" # SEU LINK DEMO
+            link = "https://drive.google.com/file/d/1HfyvtqEZkPBji1G6jg3VUT97Y8H9tlO0/view?usp=sharing"
             nome = "DEMO (30 Dias)"
             
         return render_template_string(f"""
