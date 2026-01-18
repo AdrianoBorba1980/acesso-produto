@@ -6,9 +6,6 @@ import uuid
 import datetime
 from supabase import create_client, Client
 
-# Carrega variáveis de ambiente
-load_dotenv()   
-
 app = Flask(__name__)
 CORS(app)  # Permite webhooks do Mercado Pago
 
